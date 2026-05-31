@@ -11,7 +11,7 @@ import json
 import os
 
 REPO = "https://github.com/criteriaenv/tessera.git"
-RAMA = "claude/hydrogeology-contaminant-analysis-J21BH"
+RAMA = "claude/transito-contaminantes-ER"
 
 
 def md(texto):

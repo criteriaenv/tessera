@@ -1,6 +1,6 @@
 # Hidrogeología — Tránsito de contaminantes
 
-[![Abrir en Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/criteriaenv/tessera/blob/claude/hydrogeology-contaminant-analysis-J21BH/hidrogeologia/hidrogeologia_colab.ipynb)
+[![Abrir en Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/criteriaenv/tessera/blob/claude/transito-contaminantes-ER/Claude/hidrogeologia/hidrogeologia_colab.ipynb)
 
 **Análisis y visualización del tránsito de contaminantes en hidrogeología.**
 
