@@ -1,7 +1,0 @@
-# Dependencias del módulo de hidrogeología
-numpy>=1.24
-scipy>=1.10
-matplotlib>=3.6
-# Opcional: conversión de coordenadas desde cualquier WKID/EPSG al mapa.
-# Sin pyproj solo se admiten los WKID 4326 (lon/lat) y 3857 (Web Mercator).
-pyproj>=3.4
