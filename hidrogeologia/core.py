@@ -14,6 +14,7 @@ Referencias clave (ver ``referencias.py`` para la lista completa):
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any
 
@@ -163,6 +164,7 @@ class ResultadosModelo:
     transporte: Dict[str, Any]
     desplazamiento_lateral: Optional[Dict[str, Any]]
     metadatos: Dict[str, Any]
+    geo: Optional[Dict[str, Any]] = None
 
     def a_dict(self) -> Dict[str, Any]:
         return {
@@ -171,6 +173,7 @@ class ResultadosModelo:
             "capas": self.capas,
             "transporte": self.transporte,
             "desplazamiento_lateral": self.desplazamiento_lateral,
+            "geo": self.geo,
         }
 
 
@@ -212,6 +215,9 @@ class ModeloHidrogeologico:
         tiempo_max_anios: float = 10.0,
         distancia_max_m: Optional[float] = None,
         descripcion: str = "",
+        origen: Optional[Dict[str, Any]] = None,
+        azimut_flujo_grados: float = 90.0,
+        basemap: str = "topografia",
     ):
         if not capas:
             raise ValueError("El modelo debe tener al menos una capa.")
@@ -221,6 +227,11 @@ class ModeloHidrogeologico:
         self.concentracion_fuente = concentracion_fuente
         self.tiempo_max_anios = tiempo_max_anios
         self.descripcion = descripcion
+        # Georreferenciación: punto de origen {x, y, wkid}, rumbo del flujo y
+        # mapa base por defecto del visor.
+        self.origen = origen
+        self.azimut_flujo_grados = azimut_flujo_grados
+        self.basemap = basemap
 
         # Capa de transporte: por defecto la más transmisiva (la más rápida).
         if capa_transporte_idx is None:
@@ -352,6 +363,38 @@ class ModeloHidrogeologico:
         )
         return np.clip(long_term * vert_term, 0.0, 1.0)
 
+    @staticmethod
+    def extension_longitudinal(v, D_L, t, R, umbral=0.01, dist_tope=None):
+        """Distancia a la que el frente del penacho cae por debajo de ``umbral``
+        (C/C0) al tiempo ``t``. Sirve para **autoajustar** la longitud de los
+        gráficos del penacho a la prolongación real del resultado.
+
+        Se busca el x donde la solución de Ogata-Banks en el eje = umbral,
+        partiendo del avance advectivo y añadiendo la cola dispersiva.
+        """
+        if v <= 0 or t <= 0:
+            return 50.0
+        vt = v * t / R
+        # Punto de partida: avance advectivo. La cola dispersiva añade ~ varias
+        # veces sqrt(D_L*t/R). Se busca con bisección sobre el eje longitudinal.
+        sigma = math.sqrt(max(D_L * t / R, 1e-12))
+        x_hi = vt + 6.0 * sigma + 10.0
+        if dist_tope:
+            x_hi = min(x_hi, dist_tope)
+        # Si en x_hi aún hay concentración por encima del umbral, devuélvelo.
+        f = lambda xx: float(ModeloHidrogeologico.ogata_banks(
+            np.array([xx]), t, v, D_L, R)[0]) - umbral
+        lo, hi = 0.0, x_hi
+        if f(hi) > 0:
+            return hi * 1.05
+        for _ in range(40):
+            mid = 0.5 * (lo + hi)
+            if f(mid) > 0:
+                lo = mid
+            else:
+                hi = mid
+        return max(50.0, hi * 1.08)  # pequeño margen visual
+
     # -- Desplazamiento lateral -------------------------------------------
     def desplazamiento_lateral_capa(self, capa: Capa, tiempos_s):
         """Desplazamiento (avance) del contaminante por advección [m].
@@ -431,10 +474,16 @@ class ModeloHidrogeologico:
                 "C_mg_l": (c_obs * self.concentracion_fuente).tolist(),
             }
 
-            ancho_fuente = max(self.distancia_max_m * 0.04, 2.0)
+            # Autoajuste de la longitud del penacho a la prolongación real del
+            # resultado (hasta donde C/C0 cae por debajo del 1 %), en lugar de
+            # usar siempre la distancia máxima de los perfiles.
+            ext_pen = self.extension_longitudinal(
+                v, D_L, tmax_s, R, umbral=0.01, dist_tope=self.distancia_max_m * 3.0)
+            transporte["extension_penacho_m"] = ext_pen
+            ancho_fuente = max(ext_pen * 0.04, 2.0)
             ny = 80
-            y_ext = max(self.distancia_max_m * 0.18, 10.0)
-            xg = np.linspace(0.1, self.distancia_max_m, 120)
+            y_ext = max(ext_pen * 0.18, 10.0)
+            xg = np.linspace(0.1, ext_pen, 120)
             yg = np.linspace(-y_ext, y_ext, ny)
             XX, YY = np.meshgrid(xg, yg)
             CC = self.domenico_2d(
@@ -539,12 +588,24 @@ class ModeloHidrogeologico:
             "modelo": "Acuífero multicapa · ADE (Ogata-Banks) · Domenico 2D",
         }
 
+        # Bloque de georreferenciación (origen + huella del penacho en planta).
+        geo = None
+        if self.origen:
+            from .geo import info_geo
+            long_pen = transporte.get("extension_penacho_m")
+            semi = None
+            if transporte.get("penacho_2d"):
+                semi = transporte["penacho_2d"]["y_m"][-1] * 0.6
+            geo = info_geo(self.origen, self.azimut_flujo_grados,
+                           long_pen, semi, self.basemap)
+
         return ResultadosModelo(
             sistema=sistema,
             capas=capas_dict,
             transporte=transporte,
             desplazamiento_lateral=desplazamiento,
             metadatos=metadatos,
+            geo=geo,
         )
 
     # -- Construcción desde diccionario -----------------------------------
@@ -560,4 +621,7 @@ class ModeloHidrogeologico:
             tiempo_max_anios=d.get("tiempo_max_anios", 10.0),
             distancia_max_m=d.get("distancia_max_m"),
             descripcion=d.get("descripcion", ""),
+            origen=d.get("origen"),
+            azimut_flujo_grados=d.get("azimut_flujo_grados", 90.0),
+            basemap=d.get("basemap", "topografia"),
         )

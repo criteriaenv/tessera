@@ -36,8 +36,11 @@ def _fmt(x, d=2):
 
 
 def generar_pdf(modelo: ModeloHidrogeologico, res: ResultadosModelo, ruta: str) -> str:
+    _PAG["n"] = 0
     with PdfPages(ruta) as pdf:
         _portada(pdf, modelo, res)
+        if res.geo:
+            _pagina_mapa(pdf, modelo, res)
         _pagina_columna(pdf, modelo, res)
         if res.transporte.get("perfiles"):
             _pagina_transporte(pdf, modelo, res)
@@ -65,8 +68,15 @@ def _encabezado(fig, titulo, subtitulo=""):
                               transform=fig.transFigure))
 
 
-def _pie(fig, n):
-    fig.text(0.94, 0.03, f"Pág. {n}", fontsize=8, color="#999", ha="right")
+# Contador de páginas físicas (se reinicia en cada generación de PDF).
+_PAG = {"n": 0}
+
+
+def _pie(fig, n=None):
+    """Pie de página. La numeración física es automática (incremental) para que
+    insertar páginas condicionales no descuadre los números."""
+    _PAG["n"] += 1
+    fig.text(0.94, 0.03, f"Pág. {_PAG['n']}", fontsize=8, color="#999", ha="right")
     fig.text(0.06, 0.03,
              "Modelo analítico Ogata-Banks (1961) / Domenico (1987) · cribado preliminar",
              fontsize=7, color="#999")
@@ -121,10 +131,85 @@ def _portada(pdf, modelo, res):
     plt.close(fig)
 
 
+def _pagina_mapa(pdf, modelo, res):
+    """Página de ubicación con mapa estático del emplazamiento y huella del
+    penacho. Descarga teselas del mapa base elegido (WKID/selector); si no hay
+    red, dibuja una vista esquemática equivalente.
+    """
+    from .geo import (stitch_basemap, zoom_para_extension, destino_geodesico,
+                      BASEMAPS)
+    g = res.geo
+    fig = plt.figure(figsize=(8.27, 11.69))
+    fig.patch.set_facecolor("white")
+    bm_lbl = BASEMAPS.get(g["basemap"], BASEMAPS["topografia"])["etiqueta"]
+    _encabezado(fig, "1 · Ubicación del emplazamiento",
+                f"Origen EPSG:{g['wkid']} · mapa base «{bm_lbl}»")
+    ax = fig.add_axes([0.10, 0.42, 0.84, 0.40])
+    lon, lat = g["lon"], g["lat"]
+
+    long_pen = 0.0
+    if g.get("punta_penacho"):
+        long_pen = g["punta_penacho"]["longitud_m"]
+
+    z = zoom_para_extension(long_pen if long_pen else 400.0)
+    mosaico = stitch_basemap(lon, lat, z, g["basemap"], n_tiles=3)
+
+    if mosaico is not None:
+        img, (lon_min, lon_max, lat_min, lat_max) = mosaico
+        ax.imshow(img, extent=[lon_min, lon_max, lat_min, lat_max], aspect="auto")
+        fuente_nota = f"Mapa base «{bm_lbl}» (teselas descargadas)."
+    else:
+        ax.set_facecolor("#eef3f6")
+        fuente_nota = ("Sin acceso a teselas en el momento de generar el informe: "
+                       "se muestra una vista esquemática (norte arriba).")
+
+    # Huella del penacho (si la hay).
+    if g.get("huella_penacho"):
+        poly = g["huella_penacho"]  # [[lat, lon], ...]
+        xs = [p[1] for p in poly] + [poly[0][1]]
+        ys = [p[0] for p in poly] + [poly[0][0]]
+        ax.fill(xs, ys, facecolor="#ff7043", alpha=0.35, edgecolor="#ffb74d", lw=1.5,
+                zorder=5, label="Huella del penacho")
+        pt = g["punta_penacho"]
+        ax.plot([pt["lon"]], [pt["lat"]], "o", color="#fff",
+                markeredgecolor="#ff7043", markersize=7, zorder=6)
+    ax.plot([lon], [lat], "^", color="#1a3349", markersize=12, zorder=7,
+            markeredgecolor="white", label="Origen de los datos")
+
+    if mosaico is None and not g.get("huella_penacho"):
+        # Vista esquemática sin penacho: indica el rumbo del flujo.
+        az = g["azimut_flujo_grados"]
+        ax.annotate("", xy=(0.7, 0.3), xytext=(0.3, 0.7),
+                    xycoords="axes fraction",
+                    arrowprops=dict(arrowstyle="->", color="#1f6f8b", lw=2))
+        ax.text(0.5, 0.5, f"Flujo {az:.0f}°", transform=ax.transAxes,
+                fontsize=9, color="#1f6f8b")
+
+    ax.set_xlabel("Longitud (°)")
+    ax.set_ylabel("Latitud (°)")
+    ax.set_title("Emplazamiento y huella del penacho en planta", fontsize=10)
+    ax.legend(fontsize=7, loc="upper right")
+
+    # Ficha de coordenadas.
+    txt = (
+        f"Origen (entrada): X = {_fmt(g['origen_x'],2)} · Y = {_fmt(g['origen_y'],2)}  "
+        f"[EPSG:{g['wkid']} — {g['wkid_nombre']}]\n"
+        f"Origen (WGS84): lat = {_fmt(g['lat'],6)}° · lon = {_fmt(g['lon'],6)}°  ·  "
+        f"rumbo del flujo = {_fmt(g['azimut_flujo_grados'],0)}° desde el N\n"
+        + (f"Huella del penacho ≈ {_fmt(long_pen,0)} m de longitud (hasta C/C0 ≈ 0,01)."
+           if long_pen else "Sin penacho georreferenciado (define gradiente).")
+    )
+    fig.text(0.10, 0.30, txt, fontsize=9, color="#333")
+    fig.text(0.10, 0.20, fuente_nota, fontsize=8, color="#888")
+    _pie(fig, 2)
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def _pagina_columna(pdf, modelo, res):
     fig = plt.figure(figsize=(8.27, 11.69))
     fig.patch.set_facecolor("white")
-    _encabezado(fig, "1 · Columna hidrogeológica y capas",
+    _encabezado(fig, "2 · Columna hidrogeológica y capas",
                 "Espesores, permeabilidad y propiedades de cada estrato")
 
     ax = fig.add_axes([0.08, 0.40, 0.34, 0.40])
@@ -187,7 +272,7 @@ def _pagina_transporte(pdf, modelo, res):
     t = res.transporte
     fig = plt.figure(figsize=(8.27, 11.69))
     fig.patch.set_facecolor("white")
-    _encabezado(fig, "2 · Transporte advectivo-dispersivo",
+    _encabezado(fig, "3 · Transporte advectivo-dispersivo",
                 f"Capa «{t['capa']}» · solución de Ogata-Banks (1961)")
     x = np.array(t["x_m"])
 
@@ -229,7 +314,7 @@ def _pagina_penacho(pdf, modelo, res):
         return
     fig = plt.figure(figsize=(8.27, 11.69))
     fig.patch.set_facecolor("white")
-    _encabezado(fig, "3 · Penacho de contaminación en planta",
+    _encabezado(fig, "4 · Penacho de contaminación en planta",
                 f"Modelo de Domenico (1987) · t = {_fmt(pen['t_anios'],1)} años")
     ax = fig.add_axes([0.10, 0.45, 0.84, 0.35])
     xg = np.array(pen["x_m"]); yg = np.array(pen["y_m"])
@@ -258,7 +343,7 @@ def _pagina_penacho_perfil(pdf, modelo, res):
         return
     fig = plt.figure(figsize=(8.27, 11.69))
     fig.patch.set_facecolor("white")
-    _encabezado(fig, "3b · Pluma de transporte en perfil (corte vertical)",
+    _encabezado(fig, "4b · Pluma de transporte en perfil (corte vertical)",
                 f"Modelo de Domenico (1987) · gradiente · t = {_fmt(pen['t_anios'],1)} años")
     ax = fig.add_axes([0.10, 0.45, 0.84, 0.35])
     xg = np.array(pen["x_m"]); zg = np.array(pen["z_m"])
@@ -293,7 +378,7 @@ def _pagina_desplazamiento(pdf, modelo, res):
     d = res.desplazamiento_lateral
     fig = plt.figure(figsize=(8.27, 11.69))
     fig.patch.set_facecolor("white")
-    _encabezado(fig, "4 · Desplazamiento lateral del contaminante",
+    _encabezado(fig, "5 · Desplazamiento lateral del contaminante",
                 f"Gradiente hidráulico i = {_fmt(d['gradiente_hidraulico'],4)}")
     ax = fig.add_axes([0.10, 0.48, 0.84, 0.32])
     for i, c in enumerate(d["por_capa"]):
@@ -344,7 +429,7 @@ def _paginas_capitulo(pdf):
     def nueva_pagina():
         fig = plt.figure(figsize=(8.27, 11.69))
         fig.patch.set_facecolor("white")
-        _encabezado(fig, "6 · Capítulo hidrogeológico",
+        _encabezado(fig, "7 · Capítulo hidrogeológico",
                     cap["titulo"] if estado["primera"] else "(continuación)")
         estado["fig"] = fig
         estado["y"] = 0.82
@@ -379,7 +464,7 @@ def _paginas_capitulo(pdf):
 def _pagina_referencias(pdf):
     fig = plt.figure(figsize=(8.27, 11.69))
     fig.patch.set_facecolor("white")
-    _encabezado(fig, "7 · Referencias bibliográficas", "Fundamento científico del modelo")
+    _encabezado(fig, "8 · Referencias bibliográficas", "Fundamento científico del modelo")
     y = 0.82
     n = 1
     for r in REFERENCIAS:
@@ -388,7 +473,7 @@ def _pagina_referencias(pdf):
             pdf.savefig(fig); plt.close(fig)
             fig = plt.figure(figsize=(8.27, 11.69))
             fig.patch.set_facecolor("white")
-            _encabezado(fig, "7 · Referencias bibliográficas", "(continuación)")
+            _encabezado(fig, "8 · Referencias bibliográficas", "(continuación)")
             y = 0.82
         for ln in lineas:
             fig.text(0.06, y, ln, fontsize=9, color="#222")

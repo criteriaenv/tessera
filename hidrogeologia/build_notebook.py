@@ -39,8 +39,9 @@ y en **perfil vertical**, y **desplazamiento lateral** por gradiente hidráulico
 
 **Cómo usar este notebook:**
 1. Ejecuta la celda **1 (Instalación)**.
-2. Ejecuta la celda **2 (Interfaz)**: añade/quita capas y rellena los datos.
-3. Ejecuta la celda **3 (Calcular y visualizar)**.
+2. Ejecuta la celda **2 (Interfaz)**: indica el **punto de origen** (con su
+   **WKID**) y el mapa base, añade/quita capas y rellena los datos.
+3. Ejecuta la celda **3 (Calcular y visualizar)** y la **3b (Mapa interactivo)**.
 4. Ejecuta la celda **4 (Generar y descargar salidas)** para obtener el
    HTML interactivo, el informe PDF y el artefacto JSON.
 
@@ -61,7 +62,7 @@ if not os.path.isdir("tessera"):
 
 # Dependencias científicas (ya suelen estar en Colab; se asegura su versión).
 subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                "numpy", "scipy", "matplotlib", "ipywidgets"], check=True)
+                "numpy", "scipy", "matplotlib", "ipywidgets", "pyproj", "folium"], check=True)
 
 # Hace importable el paquete `hidrogeologia`.
 ruta = os.path.abspath("tessera")
@@ -155,8 +156,22 @@ for d in [
 ]:
     añadir_capa(d=d)
 
+# ---- Ubicación / georreferenciación ----
+from hidrogeologia.geo import WKID_CATALOGO, BASEMAPS
+w_usargeo = W.Checkbox(value=True, description="Georreferenciar (punto de origen + mapa)")
+w_ox = W.FloatText(value=441000.0, description="X / Este:", style={"description_width":"110px"})
+w_oy = W.FloatText(value=4474000.0, description="Y / Norte:", style={"description_width":"110px"})
+w_wkid = W.Dropdown(options=[(f"{w['wkid']} — {w['nombre']}", w["wkid"]) for w in WKID_CATALOGO],
+                    value=25830, description="WKID:", style={"description_width":"110px"},
+                    layout=W.Layout(width="360px"))
+w_az = W.FloatText(value=115.0, description="Rumbo flujo (°):", style={"description_width":"110px"})
+w_base = W.Dropdown(options=[(BASEMAPS[k]["etiqueta"], k) for k in BASEMAPS],
+                    value="imagen", description="Mapa base:", style={"description_width":"110px"})
+
 display(W.HTML("<h3>Parámetros globales</h3>"))
 display(w_nombre, w_desc, W.HBox([w_grad, w_c0, w_tmax]), w_usargrad)
+display(W.HTML("<h3>Ubicación (punto de origen y mapa)</h3>"))
+display(w_usargeo, W.HBox([w_ox, w_oy]), W.HBox([w_wkid, w_az]), w_base)
 display(W.HTML("<h3>Capas (de techo a muro)</h3>"))
 display(caja_capas, btn_add)
 
@@ -173,12 +188,17 @@ def construir_config():
             c["densidad_seca_kg_m3"] = w["rho"].value
             c["kd_m3_kg"] = w["kd"].value
         capas.append(c)
-    return {
+    cfg = {
         "nombre": w_nombre.value, "descripcion": w_desc.value,
         "gradiente_hidraulico": (w_grad.value if w_usargrad.value else None),
         "concentracion_fuente": w_c0.value, "tiempo_max_anios": w_tmax.value,
         "capas": capas,
     }
+    if w_usargeo.value:
+        cfg["origen"] = {"x": w_ox.value, "y": w_oy.value, "wkid": int(w_wkid.value)}
+        cfg["azimut_flujo_grados"] = w_az.value
+        cfg["basemap"] = w_base.value
+    return cfg
 print("Interfaz lista. Tras editar, ejecuta la celda 3.")'''))
 
 CELDAS.append(md("## 3 · Calcular y visualizar"))
@@ -250,6 +270,41 @@ if res.desplazamiento_lateral:
         print(f"  · {c['nombre']:<30} {c['desplazamiento_tmax_m']:>10.1f} m")
 else:
     print("Sin gradiente: no se calculan transporte ni desplazamiento lateral.")'''))
+
+CELDAS.append(md(
+"""## 3b · Mapa interactivo del emplazamiento
+
+Mapa centrado en el **punto de origen** (convertido a WGS84 desde el WKID
+indicado), con selector de **mapa base** (topografía, imagen/satélite, calles)
+y la **huella del penacho** proyectada en planta según el rumbo del flujo."""))
+
+CELDAS.append(code(
+'''if res.geo:
+    import folium
+    g = res.geo
+    centro = [g["lat"], g["lon"]]
+    m_map = folium.Map(location=centro, zoom_start=15, tiles=None)
+    # Mapas base estándar como capas conmutables.
+    folium.TileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+                     attr="Esri", name="Topografía").add_to(m_map)
+    folium.TileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                     attr="Esri", name="Imagen (satélite)").add_to(m_map)
+    folium.TileLayer("OpenStreetMap", name="Mapa (calles)").add_to(m_map)
+    folium.Marker(centro, tooltip="Origen de los datos",
+                  popup=f"{g['lat']:.6f}, {g['lon']:.6f} · EPSG:{g['wkid']}",
+                  icon=folium.Icon(color="darkblue", icon="tint")).add_to(m_map)
+    if g.get("huella_penacho"):
+        folium.Polygon(g["huella_penacho"], color="#ffb74d", weight=2,
+                       fill=True, fill_color="#ff7043", fill_opacity=0.35,
+                       tooltip="Huella del penacho").add_to(m_map)
+        pt = g["punta_penacho"]
+        folium.CircleMarker([pt["lat"], pt["lon"]], radius=5, color="#fff",
+                            fill_color="#ff7043", fill_opacity=1,
+                            tooltip=f"Frente del penacho · {pt['longitud_m']:.0f} m").add_to(m_map)
+    folium.LayerControl().add_to(m_map)
+    display(m_map)
+else:
+    print("Activa la georreferenciación en la celda 2 para ver el mapa.")'''))
 
 CELDAS.append(md("## 4 · Generar y descargar las salidas (HTML · PDF · JSON)"))
 

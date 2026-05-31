@@ -36,6 +36,14 @@ hidrogeológico** que interpreta el modelo.
   (x–z, con dispersividad vertical `α_V`) según **Domenico (1987)**.
 - **Desplazamiento lateral** opcional `L(t) = (K·i/n_e)·t / R` por capa cuando
   se aporta el gradiente hidráulico.
+- **Autoajuste** de la longitud de los gráficos del penacho a la prolongación
+  real del resultado (hasta donde `C/C0` cae por debajo del 1 %).
+- **Georreferenciación**: punto de **origen** de los datos en cualquier sistema
+  de coordenadas por su **WKID** (4326, 3857, UTM, Lambert…), **mapa
+  interactivo** (Leaflet) con mapas base estándar (**topografía**, **imagen**,
+  **mapa de calles**) y proyección de la **huella del penacho** en planta. El
+  informe PDF incrusta un mapa estático con el **selector de WKID** y el mapa
+  base elegidos.
 - HTML **interactivo**: edición en vivo de capas, control de tiempo, selección
   de capa de transporte y recálculo instantáneo (matemática reimplementada en
   JavaScript, sin librerías externas).
@@ -87,6 +95,9 @@ Genera `mi_caso.html`, `mi_caso.pdf` y `mi_caso.json` en la carpeta de salida.
   "gradiente_hidraulico": 0.008,
   "concentracion_fuente": 500.0,
   "tiempo_max_anios": 20.0,
+  "origen": {"x": 441000.0, "y": 4474000.0, "wkid": 25830},
+  "azimut_flujo_grados": 115,
+  "basemap": "imagen",
   "capas": [
     {"nombre": "Arena",   "espesor_m": 8.0, "K_m_s": 2e-3, "porosidad_eficaz": 0.22,
      "dispersividad_long_m": 5.0, "densidad_seca_kg_m3": 1700, "kd_m3_kg": 0.00012},
@@ -94,6 +105,15 @@ Genera `mi_caso.html`, `mi_caso.pdf` y `mi_caso.json` en la carpeta de salida.
   ]
 }
 ```
+
+Campos de **georreferenciación** (todos opcionales; si no hay `origen` no se
+genera el mapa):
+
+| Campo | Descripción |
+|---|---|
+| `origen` | Punto de origen `{x, y, wkid}` en el sistema indicado por `wkid` (WKID de ESRI/EPSG: 4326 = lon/lat, 3857 = Web Mercator, 25830 = ETRS89 UTM 30N…). |
+| `azimut_flujo_grados` | Rumbo del flujo subterráneo (0 = N, 90 = E). Orienta la huella del penacho. |
+| `basemap` | Mapa base por defecto del visor: `"topografia"`, `"imagen"` o `"mapa"`. |
 
 | Campo | Obligatorio | Descripción | Unidad |
 |---|---|---|---|
@@ -168,6 +188,7 @@ generados a partir de `examples/ejemplo_acuifero.json`:
 ```
 hidrogeologia/
 ├── core.py           # modelo, capas y ecuaciones de flujo/transporte
+├── geo.py            # georreferenciación (WKID/EPSG), mapas base, huella penacho
 ├── referencias.py    # bibliografía + capítulo hidrogeológico
 ├── html_report.py    # informe HTML interactivo (SVG/Canvas + JS)
 ├── pdf_report.py     # informe PDF (matplotlib)

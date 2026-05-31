@@ -17,6 +17,7 @@ from typing import Dict, Any
 
 from .core import ModeloHidrogeologico, ResultadosModelo, SEG_POR_ANIO
 from .referencias import REFERENCIAS, CAPITULO_HIDROGEOLOGICO
+from .geo import WKID_CATALOGO, BASEMAPS
 
 PALETA = [
     "#8d6e63", "#ffb74d", "#fff176", "#aed581", "#4fc3f7",
@@ -46,8 +47,12 @@ def _config_js(modelo: ModeloHidrogeologico, res: ResultadosModelo) -> Dict[str,
         "capaTransporte": modelo.capa_transporte_idx,
         "tiempoMax": modelo.tiempo_max_anios,
         "distanciaMax": modelo.distancia_max_m,
+        "azimutFlujo": modelo.azimut_flujo_grados,
         "segPorAnio": SEG_POR_ANIO,
         "capas": capas,
+        "geo": res.geo,
+        "wkidCatalogo": WKID_CATALOGO,
+        "basemaps": BASEMAPS,
     }
 
 
@@ -162,7 +167,18 @@ svg{{width:100%;height:auto;display:block}}
 footer{{text-align:center;color:var(--muted);font-size:.82rem;padding:24px}}
 .note{{background:#10283a;border-left:3px solid var(--acc);padding:10px 14px;
   border-radius:6px;font-size:.88rem;margin:10px 0}}
+#mapa{{height:460px;border-radius:10px;border:1px solid var(--line)}}
+.basemap-sw{{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}}
+.basemap-sw button{{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+  border-radius:8px;padding:6px 12px;cursor:pointer;font-size:.85rem}}
+.basemap-sw button.activo{{background:var(--acc);color:#06222f;font-weight:600}}
+.coordbox{{display:flex;gap:10px;flex-wrap:wrap;align-items:end}}
+.coordbox>div{{flex:1;min-width:120px}}
+.leaflet-popup-content{{color:#102132}}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
 </head>
 <body>
 <header>
@@ -171,7 +187,31 @@ footer{{text-align:center;color:var(--muted);font-size:.82rem;padding:24px}}
 </header>
 <nav id="nav"></nav>
 <main>
-  <section id="sec-resumen" class="activa">
+  <section id="sec-ubicacion" class="activa">
+    <h2>Ubicación · punto de origen y mapa interactivo</h2>
+    <p class="muted">Indica el <strong>punto de origen</strong> de los datos en
+       el sistema de coordenadas que elijas (por su <strong>WKID</strong>). El
+       mapa se centra en ese punto y, si hay penacho calculado, dibuja su huella
+       en planta según el rumbo del flujo.</p>
+    <div class="panel">
+      <div class="coordbox">
+        <div><label class="muted">X / Este (o longitud)</label>
+          <input id="inpOX" type="number" step="any"></div>
+        <div><label class="muted">Y / Norte (o latitud)</label>
+          <input id="inpOY" type="number" step="any"></div>
+        <div><label class="muted">WKID (sistema de referencia)</label>
+          <select id="selWkid"></select></div>
+        <div><label class="muted">Rumbo del flujo (° desde N)</label>
+          <input id="inpAz" type="number" step="1" value="90"></div>
+        <div><button class="btn" onclick="recentrarMapa()">Actualizar mapa</button></div>
+      </div>
+      <div class="basemap-sw" id="basemapSw"></div>
+    </div>
+    <div id="mapa"></div>
+    <div class="panel note" id="notaMapa"></div>
+  </section>
+
+  <section id="sec-resumen">
     <h2>Resumen del modelo</h2>
     <p class="muted" id="descripcion"></p>
     <div class="grid cards" id="tarjetas"></div>
@@ -338,7 +378,7 @@ function distanciaMax(){{
 }}
 
 /* ---------- Navegación ---------- */
-const SECCIONES=[['resumen','Resumen'],['columna','Columna y capas'],
+const SECCIONES=[['ubicacion','Ubicación / Mapa'],['resumen','Resumen'],['columna','Columna y capas'],
   ['transporte','Transporte'],['desplazamiento','Desplazamiento lateral'],
   ['capitulo','Capítulo hidrogeológico'],['referencias','Referencias']];
 function initNav(){{
@@ -354,6 +394,7 @@ function initNav(){{
       if(id==='transporte')dibujarTransporte();
       if(id==='desplazamiento')dibujarDesplazamiento();
       if(id==='columna')dibujarColumna();
+      if(id==='ubicacion'&&MAPA)setTimeout(()=>MAPA.invalidateSize(),100);
     }};
     nav.appendChild(b);
   }});
@@ -636,8 +677,154 @@ document.getElementById('inpGrad').addEventListener('change',e=>{{GRAD=e.target.
 document.getElementById('inpC0').addEventListener('change',e=>{{C0=+e.target.value;recalcular();}});
 document.getElementById('selCapa').addEventListener('change',e=>{{CAPA_T=+e.target.value;dibujarTransporte();}});
 
+/* ---------- Mapa interactivo (Leaflet) ---------- */
+let MAPA=null, CAPA_BASE=null, CAPA_PENACHO=null, MARCADOR=null;
+let BASEMAP_ACT=(CFG.geo&&CFG.geo.basemap)||'topografia';
+
+function defWkid(){{
+  // origen por defecto: el del modelo, o WGS84 en (0,0) si no hay geo.
+  if(CFG.geo) return {{x:CFG.geo.origen_x,y:CFG.geo.origen_y,wkid:CFG.geo.wkid,az:CFG.geo.azimut_flujo_grados}};
+  return {{x:-3.7038,y:40.4168,wkid:4326,az:CFG.azimutFlujo||90}};
+}}
+
+function aLonLat(x,y,wkid){{
+  if(wkid===4326) return [x,y];
+  if(wkid===3857){{const R=6378137;return [x/R*180/Math.PI,(2*Math.atan(Math.exp(y/R))-Math.PI/2)*180/Math.PI];}}
+  // Cualquier EPSG vía proj4 (usa la BD pública epsg.io si está disponible).
+  if(window.proj4){{
+    try{{
+      if(!proj4.defs('EPSG:'+wkid)){{
+        // proj4 trae 4326/3857; para otros se requiere la definición. Se intenta
+        // una def UTM genérica si el WKID es de la familia 326xx/327xx/258xx.
+      }}
+      return proj4('EPSG:'+wkid,'EPSG:4326',[x,y]);
+    }}catch(e){{}}
+  }}
+  return null;
+}}
+
+// Definiciones proj4 para los WKID del catálogo (para no depender de la red).
+function registrarProj(){{
+  if(!window.proj4) return;
+  const defs={{
+    25829:"+proj=utm +zone=29 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+    25830:"+proj=utm +zone=30 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+    25831:"+proj=utm +zone=31 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+    23030:"+proj=utm +zone=30 +ellps=intl +towgs84=-87,-98,-121,0,0,0,0 +units=m +no_defs",
+    32630:"+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs",
+    32631:"+proj=utm +zone=31 +datum=WGS84 +units=m +no_defs",
+    32719:"+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs",
+    32718:"+proj=utm +zone=18 +south +datum=WGS84 +units=m +no_defs",
+    27700:"+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +towgs84=446.448,-125.157,542.06,0.15,0.247,0.842,-20.489 +units=m +no_defs",
+    2154:"+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+    5070:"+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs",
+    26910:"+proj=utm +zone=10 +datum=NAD83 +units=m +no_defs"
+  }};
+  for(const k in defs){{ if(!proj4.defs('EPSG:'+k)) proj4.defs('EPSG:'+k, defs[k]); }}
+}}
+
+function destinoGeo(lon,lat,az,d){{
+  const R=6378137,a=az*Math.PI/180,la=lat*Math.PI/180,lo=lon*Math.PI/180,dr=d/R;
+  const la2=Math.asin(Math.sin(la)*Math.cos(dr)+Math.cos(la)*Math.sin(dr)*Math.cos(a));
+  const lo2=lo+Math.atan2(Math.sin(a)*Math.sin(dr)*Math.cos(la),Math.cos(dr)-Math.sin(la)*Math.sin(la2));
+  return [lo2*180/Math.PI,la2*180/Math.PI];
+}}
+function huellaPenacho(lon,lat,az,L,semi){{
+  const perp=az+90;
+  const oi=destinoGeo(lon,lat,perp,semi), od=destinoGeo(lon,lat,perp-180,semi);
+  const pt=destinoGeo(lon,lat,az,L);
+  const pi=destinoGeo(pt[0],pt[1],perp,semi), pd=destinoGeo(pt[0],pt[1],perp-180,semi);
+  return [[oi[1],oi[0]],[pi[1],pi[0]],[pd[1],pd[0]],[od[1],od[0]]];
+}}
+
+function capaBase(clave){{
+  const bm=CFG.basemaps[clave]||CFG.basemaps.topografia;
+  return L.tileLayer(bm.url,{{maxZoom:19,attribution:bm.atribucion}});
+}}
+
+function initBasemapSwitcher(){{
+  const cont=document.getElementById('basemapSw');
+  cont.innerHTML='';
+  Object.keys(CFG.basemaps).forEach(clave=>{{
+    const b=document.createElement('button');b.textContent=CFG.basemaps[clave].etiqueta;
+    if(clave===BASEMAP_ACT)b.classList.add('activo');
+    b.onclick=()=>{{
+      BASEMAP_ACT=clave;
+      document.querySelectorAll('#basemapSw button').forEach(x=>x.classList.remove('activo'));
+      b.classList.add('activo');
+      if(CAPA_BASE)MAPA.removeLayer(CAPA_BASE);
+      CAPA_BASE=capaBase(clave).addTo(MAPA);
+    }};
+    cont.appendChild(b);
+  }});
+}}
+
+function initWkidSelect(){{
+  const sel=document.getElementById('selWkid');
+  sel.innerHTML=CFG.wkidCatalogo.map(w=>`<option value="${{w.wkid}}">${{w.wkid}} — ${{w.nombre}}</option>`).join('');
+  const d=defWkid();
+  document.getElementById('inpOX').value=d.x;
+  document.getElementById('inpOY').value=d.y;
+  document.getElementById('inpAz').value=d.az;
+  sel.value=String(d.wkid);
+}}
+
+function longitudPenacho(){{
+  // longitud para la huella: extensión autoajustada si existe, si no avance advectivo.
+  if(DATOS.transporte&&DATOS.transporte.extension_penacho_m) return DATOS.transporte.extension_penacho_m;
+  const c=CAPAS[CAPA_T];
+  if(GRAD) return GRAD*c.K/c.ne/c.R*TMAX*CFG.segPorAnio;
+  return 0;
+}}
+
+function recentrarMapa(){{
+  registrarProj();
+  const x=+document.getElementById('inpOX').value;
+  const y=+document.getElementById('inpOY').value;
+  const wkid=+document.getElementById('selWkid').value;
+  const az=+document.getElementById('inpAz').value;
+  const ll=aLonLat(x,y,wkid);
+  const nota=document.getElementById('notaMapa');
+  if(!ll||!isFinite(ll[0])||!isFinite(ll[1])){{
+    nota.innerHTML=`No se pudo convertir el origen desde EPSG:${{wkid}} a longitud/latitud. `+
+      `Prueba con WKID 4326 (lon/lat) o 3857, o comprueba las coordenadas.`;
+    return;
+  }}
+  const [lon,lat]=ll;
+  if(!MAPA){{
+    MAPA=L.map('mapa').setView([lat,lon],14);
+    CAPA_BASE=capaBase(BASEMAP_ACT).addTo(MAPA);
+  }} else {{ MAPA.setView([lat,lon],MAPA.getZoom()||14); }}
+  if(MARCADOR)MAPA.removeLayer(MARCADOR);
+  MARCADOR=L.marker([lat,lon]).addTo(MAPA)
+    .bindPopup(`<b>Origen de los datos</b><br>${{lat.toFixed(6)}}, ${{lon.toFixed(6)}}<br>EPSG:${{wkid}}`);
+  if(CAPA_PENACHO)MAPA.removeLayer(CAPA_PENACHO);
+  const L_pen=longitudPenacho();
+  if(L_pen>0){{
+    const semi=Math.max(L_pen*0.06,1);
+    const poly=huellaPenacho(lon,lat,az,L_pen,semi);
+    CAPA_PENACHO=L.polygon(poly,{{color:'#ffb74d',weight:2,fillColor:'#ff7043',fillOpacity:0.35}})
+      .addTo(MAPA).bindPopup(`Huella del penacho · ${{(L_pen).toFixed(0)}} m · rumbo ${{az}}°`);
+    const pt=destinoGeo(lon,lat,az,L_pen);
+    L.circleMarker([pt[1],pt[0]],{{radius:5,color:'#fff',fillColor:'#ff7043',fillOpacity:1}})
+      .addTo(MAPA).bindPopup('Frente del penacho (C/C₀ ≈ 0,01)');
+    MARCADOR._penachoCapa=CAPA_PENACHO;
+    MAPA.fitBounds(L.polygon(poly).getBounds().pad(0.5));
+  }}
+  nota.innerHTML=`Origen: <strong>${{lat.toFixed(6)}}, ${{lon.toFixed(6)}}</strong> `+
+    `(EPSG:${{wkid}}) · mapa base «${{CFG.basemaps[BASEMAP_ACT].etiqueta}}»`+
+    (L_pen>0?` · huella del penacho ${{L_pen.toFixed(0)}} m hacia ${{az}}°.`:` · sin penacho (define gradiente).`);
+  setTimeout(()=>MAPA.invalidateSize(),50);
+}}
+
+function initMapa(){{
+  if(!window.L){{document.getElementById('mapa').innerHTML=
+    '<p class="muted" style="padding:20px">El mapa requiere conexión a internet (Leaflet).</p>';return;}}
+  initWkidSelect();initBasemapSwitcher();recentrarMapa();
+}}
+
 /* ---------- Init ---------- */
-initNav();dibujarResumen();dibujarColumna();
+initNav();initMapa();dibujarResumen();dibujarColumna();
 </script>
 </body>
 </html>

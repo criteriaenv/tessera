@@ -134,6 +134,62 @@ def test_calcular_sin_gradiente():
     assert res.sistema["n_capas"] == 1
 
 
+def test_geo_conversion_wgs84_y_mercator():
+    from hidrogeologia.geo import a_lonlat
+    # 4326 passthrough
+    lon, lat = a_lonlat(-3.7, 40.4, 4326)
+    assert _aprox(lon, -3.7) and _aprox(lat, 40.4)
+    # 3857 -> WGS84 (ida y vuelta aproximada)
+    import math
+    R = 6378137.0
+    x = -3.7 * math.pi / 180 * R
+    y = math.log(math.tan(math.pi/4 + (40.4*math.pi/180)/2)) * R
+    lon2, lat2 = a_lonlat(x, y, 3857)
+    assert abs(lon2 - (-3.7)) < 1e-4 and abs(lat2 - 40.4) < 1e-4
+
+
+def test_geo_huella_y_info():
+    from hidrogeologia.geo import info_geo
+    g = info_geo({"x": -3.7, "y": 40.4, "wkid": 4326}, azimut_flujo_grados=90.0,
+                 longitud_penacho_m=1000.0, semiancho_penacho_m=50.0)
+    assert g is not None
+    assert len(g["huella_penacho"]) == 4
+    # rumbo 90° (este): la punta tiene mayor longitud y ~igual latitud
+    assert g["punta_penacho"]["lon"] > g["lon"]
+    assert abs(g["punta_penacho"]["lat"] - g["lat"]) < 0.01
+    # sin penacho
+    g2 = info_geo({"x": 0, "y": 0, "wkid": 4326}, 90.0, None, None)
+    assert g2["huella_penacho"] is None
+
+
+def test_extension_longitudinal_autofit():
+    # La extensión (umbral 1%) debe superar el avance advectivo v·t y ser finita.
+    import numpy as np
+    v, D_L, t, R = 1e-6, 1e-5, 1e8, 1.0
+    ext = ModeloHidrogeologico.extension_longitudinal(v, D_L, t, R, umbral=0.01)
+    avance = v * t / R
+    assert ext > avance            # incluye la cola dispersiva
+    assert np.isfinite(ext)
+    # C/C0 en la extensión debe rondar el umbral (frente del penacho)
+    c = float(ModeloHidrogeologico.ogata_banks(np.array([ext]), t, v, D_L, R)[0])
+    assert c < 0.05
+
+
+def test_calcular_con_geo_y_extension():
+    capas = [Capa("Arena", espesor_m=10.0, K_m_s=1e-4, porosidad_eficaz=0.25,
+                  dispersividad_long_m=5.0)]
+    m = ModeloHidrogeologico("geo", capas, gradiente_hidraulico=0.005,
+                             tiempo_max_anios=10.0,
+                             origen={"x": -3.7, "y": 40.4, "wkid": 4326},
+                             azimut_flujo_grados=45.0, basemap="imagen")
+    res = m.calcular()
+    assert res.geo is not None
+    assert res.geo["basemap"] == "imagen"
+    assert _aprox(res.geo["lon"], -3.7) and _aprox(res.geo["lat"], 40.4)
+    assert "extension_penacho_m" in res.transporte
+    assert res.geo["huella_penacho"] is not None
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     fallos = 0
