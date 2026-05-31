@@ -61,3 +61,9 @@ hidrogeologia/**/__pycache__/
 # Conservar los archivos JSON propios del módulo (el patrón global *.json los excluye)
 !hidrogeologia/examples/*.json
 !hidrogeologia/ejemplo_salidas/*.json
+
+# --- Copia del prototipo en la subcarpeta Claude/ ---
+Claude/**/salidas/
+Claude/**/__pycache__/
+!Claude/hidrogeologia/examples/*.json
+!Claude/hidrogeologia/ejemplo_salidas/*.json
