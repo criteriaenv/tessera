@@ -42,6 +42,7 @@ def generar_pdf(modelo: ModeloHidrogeologico, res: ResultadosModelo, ruta: str) 
         if res.transporte.get("perfiles"):
             _pagina_transporte(pdf, modelo, res)
             _pagina_penacho(pdf, modelo, res)
+            _pagina_penacho_perfil(pdf, modelo, res)
         if res.desplazamiento_lateral:
             _pagina_desplazamiento(pdf, modelo, res)
         _paginas_capitulo(pdf)
@@ -251,6 +252,43 @@ def _pagina_penacho(pdf, modelo, res):
     plt.close(fig)
 
 
+def _pagina_penacho_perfil(pdf, modelo, res):
+    pen = res.transporte.get("penacho_perfil")
+    if not pen:
+        return
+    fig = plt.figure(figsize=(8.27, 11.69))
+    fig.patch.set_facecolor("white")
+    _encabezado(fig, "3b · Pluma de transporte en perfil (corte vertical)",
+                f"Modelo de Domenico (1987) · gradiente · t = {_fmt(pen['t_anios'],1)} años")
+    ax = fig.add_axes([0.10, 0.45, 0.84, 0.35])
+    xg = np.array(pen["x_m"]); zg = np.array(pen["z_m"])
+    CC = np.array(pen["C_rel"])
+    im = ax.pcolormesh(xg, zg, CC, cmap="turbo", shading="auto", vmin=0, vmax=1)
+    cs = ax.contour(xg, zg, CC, levels=[0.05, 0.1, 0.5], colors="white", linewidths=0.8)
+    ax.clabel(cs, fmt="%.2f", fontsize=7)
+    # Límites entre capas (líneas horizontales) y etiquetas.
+    for c in pen["capas"]:
+        ax.axhline(c["muro_m"], color="white", lw=0.5, ls=":", alpha=0.6)
+        ax.text(xg[-1]*0.99, (c["techo_m"]+c["muro_m"])/2, c["nombre"],
+                fontsize=6.5, color="white", ha="right", va="center", alpha=0.9)
+    ax.invert_yaxis()  # profundidad creciente hacia abajo
+    ax.set_xlabel("Distancia longitudinal x (m)")
+    ax.set_ylabel("Profundidad z (m)")
+    ax.set_title("Concentración relativa C/C0 — perfil vertical", fontsize=10)
+    fig.colorbar(im, ax=ax, label="C/C0", fraction=0.04, pad=0.02)
+
+    fig.text(0.10, 0.36,
+             "Pluma de transporte impulsada por el gradiente hidráulico, vista en "
+             "corte vertical (x–z). La fuente se sitúa en la capa de transporte; el "
+             "penacho\nse dispersa verticalmente según alfa_V "
+             f"(= {_fmt(pen['alfa_V_m'],3)} m). Las líneas punteadas marcan los "
+             "contactos entre capas.",
+             fontsize=9, color="#444")
+    _pie(fig, 5)
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def _pagina_desplazamiento(pdf, modelo, res):
     d = res.desplazamiento_lateral
     fig = plt.figure(figsize=(8.27, 11.69))
@@ -288,7 +326,7 @@ def _pagina_desplazamiento(pdf, modelo, res):
             cell_obj.set_text_props(color="white", fontweight="bold")
         elif r % 2 == 0:
             cell_obj.set_facecolor("#f2f6f8")
-    _pie(fig, 5)
+    _pie(fig, 6)
     pdf.savefig(fig)
     plt.close(fig)
 
@@ -301,12 +339,12 @@ def _paginas_capitulo(pdf):
         for p in sec["parrafos"]:
             bloques.append(("p", p))
 
-    estado = {"n_pag": 6, "primera": True, "fig": None, "y": 0.0}
+    estado = {"n_pag": 7, "primera": True, "fig": None, "y": 0.0}
 
     def nueva_pagina():
         fig = plt.figure(figsize=(8.27, 11.69))
         fig.patch.set_facecolor("white")
-        _encabezado(fig, "5 · Capítulo hidrogeológico",
+        _encabezado(fig, "6 · Capítulo hidrogeológico",
                     cap["titulo"] if estado["primera"] else "(continuación)")
         estado["fig"] = fig
         estado["y"] = 0.82
@@ -341,7 +379,7 @@ def _paginas_capitulo(pdf):
 def _pagina_referencias(pdf):
     fig = plt.figure(figsize=(8.27, 11.69))
     fig.patch.set_facecolor("white")
-    _encabezado(fig, "6 · Referencias bibliográficas", "Fundamento científico del modelo")
+    _encabezado(fig, "7 · Referencias bibliográficas", "Fundamento científico del modelo")
     y = 0.82
     n = 1
     for r in REFERENCIAS:
@@ -350,7 +388,7 @@ def _pagina_referencias(pdf):
             pdf.savefig(fig); plt.close(fig)
             fig = plt.figure(figsize=(8.27, 11.69))
             fig.patch.set_facecolor("white")
-            _encabezado(fig, "6 · Referencias bibliográficas", "(continuación)")
+            _encabezado(fig, "7 · Referencias bibliográficas", "(continuación)")
             y = 0.82
         for ln in lineas:
             fig.text(0.06, y, ln, fontsize=9, color="#222")
@@ -358,6 +396,6 @@ def _pagina_referencias(pdf):
         fig.text(0.08, y, r["aporta"], fontsize=8, color="#1f6f8b", style="italic")
         y -= 0.026
         n += 1
-    _pie(fig, 7)
+    _pie(fig, 8)
     pdf.savefig(fig)
     plt.close(fig)

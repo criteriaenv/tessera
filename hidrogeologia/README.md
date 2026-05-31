@@ -1,5 +1,7 @@
 # Hidrogeología — Tránsito de contaminantes
 
+[![Abrir en Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/criteriaenv/tessera/blob/claude/hydrogeology-contaminant-analysis-J21BH/hidrogeologia/hidrogeologia_colab.ipynb)
+
 **Análisis y visualización del tránsito de contaminantes en hidrogeología.**
 
 Módulo independiente (dentro de este repositorio) que modela un sistema
@@ -29,8 +31,9 @@ hidrogeológico** que interpreta el modelo.
 - **Propiedades equivalentes** del sistema estratificado: transmisividad total,
   `K` horizontal/vertical equivalente y anisotropía.
 - **Transporte de contaminantes** mediante la solución analítica de
-  **Ogata & Banks (1961)**: perfiles `C(x)`, curvas de llegada `C(t)` y
-  **penacho 2D en planta** (**Domenico, 1987**).
+  **Ogata & Banks (1961)**: perfiles `C(x)`, curvas de llegada `C(t)`,
+  **penacho en planta** (x–y) y **pluma de transporte en perfil vertical**
+  (x–z, con dispersividad vertical `α_V`) según **Domenico (1987)**.
 - **Desplazamiento lateral** opcional `L(t) = (K·i/n_e)·t / R` por capa cuando
   se aporta el gradiente hidráulico.
 - HTML **interactivo**: edición en vivo de capas, control de tiempo, selección
@@ -47,7 +50,18 @@ Requiere Python 3.9+ y tres dependencias científicas habituales:
 pip install -r hidrogeologia/requirements.txt   # numpy, scipy, matplotlib
 ```
 
-## Uso
+## Google Colab (interactivo)
+
+La forma más sencilla de usarlo, sin instalar nada: abre el notebook
+[`hidrogeologia_colab.ipynb`](hidrogeologia_colab.ipynb) en Google Colab con el
+badge de arriba. El notebook clona este repositorio, ofrece una **interfaz
+interactiva** (con `ipywidgets`) para **añadir/quitar capas** y rellenar todos
+los campos de datos, calcula, muestra las gráficas (incluidos los penachos en
+planta y en perfil) y **descarga** las tres salidas (HTML, PDF, JSON).
+
+> El notebook se regenera con `python hidrogeologia/build_notebook.py`.
+
+## Uso (línea de comandos)
 
 Desde la raíz del repositorio:
 
@@ -88,6 +102,8 @@ Genera `mi_caso.html`, `mi_caso.pdf` y `mi_caso.json` en la carpeta de salida.
 | `K_m_s` | sí | Conductividad hidráulica (permeabilidad) | m/s |
 | `porosidad_eficaz` | no (0,25) | Porosidad eficaz `n_e` | — |
 | `dispersividad_long_m` | no | Dispersividad longitudinal `α_L` | m |
+| `dispersividad_trans_m` | no (`α_L/10`) | Dispersividad transversal `α_T` (planta) | m |
+| `dispersividad_vert_m` | no (`α_L/100`) | Dispersividad vertical `α_V` (perfil) | m |
 | `densidad_seca_kg_m3` | no | Densidad aparente seca `ρ_b` | kg/m³ |
 | `kd_m3_kg` | no | Coeficiente de reparto `K_d` | m³/kg |
 
@@ -126,7 +142,8 @@ generar_pdf(modelo, res, "caso.pdf")
 | `K` vert. equivalente | `Kv = Σ(b_i) / Σ(b_i/K_i)` | Freeze & Cherry (1979) |
 | Factor de retardo | `R = 1 + ρ_b·K_d / n_e` | Fetter (2001) |
 | Transporte 1D (ADE) | solución de fuente continua | Ogata & Banks (1961) |
-| Penacho 2D | dispersión transversal | Domenico (1987) |
+| Penacho en planta (x–y) | dispersión transversal `α_T` | Domenico (1987) |
+| Pluma en perfil (x–z) | dispersión vertical `α_V` | Domenico (1987) |
 
 > ⚠️ Modelo **analítico** de cribado preliminar. Asume medio homogéneo por
 > capa, flujo permanente y uniforme y fuente constante. No sustituye a una
@@ -155,6 +172,8 @@ hidrogeologia/
 ├── html_report.py    # informe HTML interactivo (SVG/Canvas + JS)
 ├── pdf_report.py     # informe PDF (matplotlib)
 ├── cli.py            # interfaz de línea de comandos
+├── hidrogeologia_colab.ipynb   # notebook interactivo de Google Colab
+├── build_notebook.py # generador del notebook
 ├── examples/ejemplo_acuifero.json
 ├── ejemplo_salidas/  # artefactos de ejemplo
 ├── tests/test_core.py

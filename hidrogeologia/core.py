@@ -67,6 +67,7 @@ class Capa:
     kd_m3_kg: Optional[float] = None
     dispersividad_long_m: Optional[float] = None
     dispersividad_trans_m: Optional[float] = None
+    dispersividad_vert_m: Optional[float] = None
     color: Optional[str] = None
 
     # -- Propiedades derivadas --------------------------------------------
@@ -102,10 +103,20 @@ class Capa:
         return 1.0
 
     def alfa_T(self) -> float:
-        """Dispersividad transversal efectiva [m]."""
+        """Dispersividad transversal (horizontal) efectiva [m]."""
         if self.dispersividad_trans_m is not None:
             return self.dispersividad_trans_m
         return self.alfa_L() / 10.0
+
+    def alfa_V(self) -> float:
+        """Dispersividad vertical efectiva [m].
+
+        Por defecto α_V ≈ α_L/100 (Gelhar et al., 1992): la dispersión
+        vertical es típicamente uno o dos órdenes menor que la longitudinal.
+        """
+        if self.dispersividad_vert_m is not None:
+            return self.dispersividad_vert_m
+        return self.alfa_L() / 100.0
 
     def clasificacion(self) -> str:
         """Clasifica el material por su conductividad hidráulica.
@@ -134,6 +145,7 @@ class Capa:
             factor_retardo=self.factor_retardo,
             alfa_L=self.alfa_L(),
             alfa_T=self.alfa_T(),
+            alfa_V=self.alfa_V(),
             clasificacion=self.clasificacion(),
         )
         return d
@@ -316,6 +328,30 @@ class ModeloHidrogeologico:
         )
         return np.clip(long_term * trans_term, 0.0, 1.0)
 
+    @staticmethod
+    def domenico_perfil(x, z, t, v, alpha_L, alpha_V, alto_fuente, z_fuente, R=1.0):
+        """Penacho en perfil — corte vertical x–z (Domenico, 1987).
+
+        Análoga a ``domenico_2d`` pero en el plano vertical: el penacho avanza
+        por advección a lo largo de x y se dispersa verticalmente según α_V.
+        La fuente tiene una altura ``alto_fuente`` centrada en ``z_fuente`` (la
+        profundidad del centro de la fuente, positiva hacia abajo).
+
+        Devuelve C/C0 [-].
+        """
+        x = np.asarray(x, dtype=float)
+        z = np.asarray(z, dtype=float)
+        if t <= 0:
+            return np.zeros_like(x)
+        vt = v * t / R
+        long_term = 0.5 * erfc((x - vt) / (2.0 * np.sqrt(alpha_L * np.maximum(x, 1e-9))))
+        sigma = np.sqrt(np.maximum(alpha_V * x, 1e-12))
+        vert_term = 0.5 * (
+            erfc((z - (z_fuente + alto_fuente / 2.0)) / (2.0 * sigma))
+            - erfc((z - (z_fuente - alto_fuente / 2.0)) / (2.0 * sigma))
+        )
+        return np.clip(long_term * vert_term, 0.0, 1.0)
+
     # -- Desplazamiento lateral -------------------------------------------
     def desplazamiento_lateral_capa(self, capa: Capa, tiempos_s):
         """Desplazamiento (avance) del contaminante por advección [m].
@@ -360,6 +396,7 @@ class ModeloHidrogeologico:
             "perfiles": None,
             "curva_llegada": None,
             "penacho_2d": None,
+            "penacho_perfil": None,
         }
 
         if vc is not None and vc > 0:
@@ -409,6 +446,36 @@ class ModeloHidrogeologico:
                 "y_m": yg.tolist(),
                 "C_rel": CC.tolist(),
                 "ancho_fuente_m": ancho_fuente,
+            }
+
+            # Penacho en perfil (corte vertical x–z). La fuente se sitúa en la
+            # capa de transporte; z se mide en profundidad (positiva hacia abajo).
+            z_techo = sum(self.capas[i].espesor_m for i in range(self.capa_transporte_idx))
+            z_centro = z_techo + capa_t.espesor_m / 2.0
+            alto_fuente = capa_t.espesor_m
+            nz = 80
+            zg = np.linspace(0.0, self.espesor_total_m, nz)
+            XXp, ZZp = np.meshgrid(xg, zg)
+            CCp = self.domenico_perfil(
+                XXp, ZZp, tmax_s, v, alpha_L, capa_t.alfa_V(),
+                alto_fuente, z_centro, R
+            )
+            # Límites de cada capa para dibujar la estratigrafía en el perfil.
+            limites = []
+            prof = 0.0
+            for c in self.capas:
+                limites.append({"nombre": c.nombre, "techo_m": prof,
+                                "muro_m": prof + c.espesor_m})
+                prof += c.espesor_m
+            transporte["penacho_perfil"] = {
+                "t_anios": self.tiempo_max_anios,
+                "x_m": xg.tolist(),
+                "z_m": zg.tolist(),
+                "C_rel": CCp.tolist(),
+                "z_centro_fuente_m": z_centro,
+                "alto_fuente_m": alto_fuente,
+                "alfa_V_m": capa_t.alfa_V(),
+                "capas": limites,
             }
 
         desplazamiento = None

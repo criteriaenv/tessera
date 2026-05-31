@@ -34,6 +34,7 @@ def _config_js(modelo: ModeloHidrogeologico, res: ResultadosModelo) -> Dict[str,
             "ne": c.porosidad_eficaz,
             "alfaL": c.alfa_L(),
             "alfaT": c.alfa_T(),
+            "alfaV": c.alfa_V(),
             "R": c.factor_retardo,
             "color": c.color or PALETA[i % len(PALETA)],
         })
@@ -190,6 +191,7 @@ footer{{text-align:center;color:var(--muted);font-size:.82rem;padding:24px}}
       <div class="panel" style="flex:2">
         <table id="tablaCapas"><thead><tr>
           <th>Capa</th><th>Espesor (m)</th><th>K (m/s)</th><th>n<sub>e</sub></th>
+          <th>&alpha;<sub>L</sub> (m)</th><th>&alpha;<sub>V</sub> (m)</th>
           <th>k (darcy)</th><th>T (m&sup2;/d&iacute;a)</th><th></th>
         </tr></thead><tbody></tbody></table>
       </div>
@@ -241,9 +243,18 @@ footer{{text-align:center;color:var(--muted);font-size:.82rem;padding:24px}}
       <div id="breakSVG"></div>
     </div>
     <div class="panel" id="panelPenacho">
-      <h3 style="margin-top:0">Penacho en planta (modelo de Domenico, 1987)</h3>
+      <h3 style="margin-top:0">Penacho en planta — vista en planta x–y (Domenico, 1987)</h3>
       <canvas id="canvasPenacho" style="width:100%;border-radius:8px"></canvas>
       <div class="legend" id="leyendaPenacho"></div>
+    </div>
+    <div class="panel" id="panelPerfil">
+      <h3 style="margin-top:0">Pluma de transporte en perfil — corte vertical x–z</h3>
+      <p class="muted">Penacho impulsado por el gradiente hidráulico visto en
+         corte vertical; la fuente se sitúa en la capa de transporte y se
+         dispersa verticalmente seg&uacute;n &alpha;<sub>V</sub>. Las l&iacute;neas
+         marcan los contactos entre capas.</p>
+      <canvas id="canvasPerfil" style="width:100%;border-radius:8px"></canvas>
+      <div class="legend" id="leyendaPerfil"></div>
     </div>
   </section>
 
@@ -406,6 +417,8 @@ function dibujarTablaCapas(){{
       <td><input type="number" step="0.1" value="${{c.espesor}}" onchange="upd(${{i}},'espesor',+this.value)"></td>
       <td><input type="number" step="1e-7" value="${{c.K}}" onchange="upd(${{i}},'K',+this.value)"></td>
       <td><input type="number" step="0.01" value="${{c.ne}}" onchange="upd(${{i}},'ne',+this.value)"></td>
+      <td><input type="number" step="0.1" value="${{c.alfaL}}" onchange="upd(${{i}},'alfaL',+this.value)"></td>
+      <td><input type="number" step="0.001" value="${{c.alfaV}}" onchange="upd(${{i}},'alfaV',+this.value)"></td>
       <td>${{fmt(k_darcy,2)}}</td><td>${{fmt(T,2)}}</td>
       <td><button class="btn sec" onclick="delCapa(${{i}})">✕</button></td>`;
     tb.appendChild(tr);
@@ -413,7 +426,7 @@ function dibujarTablaCapas(){{
   document.getElementById('nCapasTag').textContent=CAPAS.length+' capas';
 }}
 function upd(i,campo,val){{CAPAS[i][campo]=val;recalcular();}}
-function addCapa(){{CAPAS.push({{nombre:'Capa '+(CAPAS.length+1),espesor:5,K:1e-5,ne:0.25,alfaL:1,alfaT:0.1,R:1,color:PALETA[CAPAS.length%10]}});recalcular();}}
+function addCapa(){{CAPAS.push({{nombre:'Capa '+(CAPAS.length+1),espesor:5,K:1e-5,ne:0.25,alfaL:1,alfaT:0.1,alfaV:0.01,R:1,color:PALETA[CAPAS.length%10]}});recalcular();}}
 function delCapa(i){{if(CAPAS.length<=1)return;CAPAS.splice(i,1);if(CAPA_T>=CAPAS.length)CAPA_T=0;recalcular();}}
 function resetCapas(){{CAPAS=JSON.parse(JSON.stringify(CFG.capas));CAPA_T=CFG.capaTransporte;recalcular();}}
 
@@ -454,7 +467,7 @@ function dibujarTransporte(){{
   sel.innerHTML=CAPAS.map((c,i)=>`<option value="${{i}}" ${{i===CAPA_T?'selected':''}}>${{c.nombre}}</option>`).join('');
   const hayGrad=GRAD!=null&&GRAD>0;
   document.getElementById('panelSinGrad').style.display=hayGrad?'none':'block';
-  ['panelTransporte','panelBreak','panelPenacho'].forEach(id=>document.getElementById(id).style.display=hayGrad?'block':'none');
+  ['panelTransporte','panelBreak','panelPenacho','panelPerfil'].forEach(id=>document.getElementById(id).style.display=hayGrad?'block':'none');
   if(!hayGrad)return;
   const c=CAPAS[CAPA_T];
   const v=GRAD*c.K/c.ne, DL=c.alfaL*v, R=c.R;
@@ -487,6 +500,7 @@ function dibujarTransporte(){{
     `<div class="card"><div class="k">${{k}}</div><div class="v">${{v}}</div><div class="u">${{u}}</div></div>`).join('');
   dibujarBreakthrough(v,DL,R);
   dibujarPenacho(v,c,R);
+  dibujarPerfil(v,R);
 }}
 function interpFrente(xs,ys){{for(let i=1;i<ys.length;i++){{if(ys[i]<=0.5){{const f=(0.5-ys[i-1])/(ys[i]-ys[i-1]);return xs[i-1]+f*(xs[i]-xs[i-1]);}}}}return 0;}}
 
@@ -528,6 +542,47 @@ function dibujarPenacho(v,c,R){{
   ctx.fillText('Fuente',4,Hpx/2-4);ctx.fillText('Flujo →',Wpx-70,18);
   document.getElementById('leyendaPenacho').innerHTML=
     `<span class="muted">Penacho a t=${{TMAX}} años · eje X: 0–${{fmt(DMAX,0)}} m · eje Y: ±${{fmt(yExt,0)}} m</span>`+
+    [0,0.25,0.5,0.75,1].map(cc=>{{const k=colormap(cc);return `<span><span class="sw" style="background:rgb(${{k[0]}},${{k[1]}},${{k[2]}})"></span>${{cc}}</span>`;}}).join('');
+}}
+
+function dibujarPerfil(v,R){{
+  const cv=document.getElementById('canvasPerfil');
+  const Wpx=720,Hpx=260;cv.width=Wpx;cv.height=Hpx;
+  const ctx=cv.getContext('2d');
+  const t=TMAX*CFG.segPorAnio,vt=v*t/R;
+  const c=CAPAS[CAPA_T];
+  const aL=c.alfaL,aV=c.alfaV;
+  // Espesor total y profundidad del centro de la fuente (capa de transporte).
+  let B=0;CAPAS.forEach(cc=>B+=cc.espesor);
+  let zTecho=0;for(let i=0;i<CAPA_T;i++)zTecho+=CAPAS[i].espesor;
+  const zCentro=zTecho+c.espesor/2, alto=c.espesor;
+  const img=ctx.createImageData(Wpx,Hpx);
+  for(let px=0;px<Wpx;px++){{
+    const x=0.1+DMAX*px/Wpx;
+    const longT=0.5*erfc((x-vt)/(2*Math.sqrt(aL*Math.max(x,1e-9))));
+    const sig=Math.sqrt(Math.max(aV*x,1e-12));
+    for(let py=0;py<Hpx;py++){{
+      const z=B*py/Hpx;  // profundidad creciente hacia abajo
+      const vert=0.5*(erfc((z-(zCentro+alto/2))/(2*sig))-erfc((z-(zCentro-alto/2))/(2*sig)));
+      let C=Math.max(0,Math.min(1,longT*vert));
+      const col=colormap(C);
+      const o=(py*Wpx+px)*4;
+      img.data[o]=col[0];img.data[o+1]=col[1];img.data[o+2]=col[2];img.data[o+3]=255;
+    }}
+  }}
+  ctx.putImageData(img,0,0);
+  // Contactos entre capas (líneas) y etiquetas.
+  ctx.strokeStyle='rgba(255,255,255,0.55)';ctx.fillStyle='#fff';ctx.font='10px sans-serif';
+  let zAcum=0;
+  CAPAS.forEach((cc,i)=>{{
+    zAcum+=cc.espesor;const py=zAcum/B*Hpx;
+    ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(Wpx,py);ctx.stroke();
+    ctx.fillText(cc.nombre,6,(zAcum-cc.espesor/2)/B*Hpx+3);
+  }});
+  ctx.setLineDash([]);
+  ctx.fillText('Flujo →',Wpx-70,14);
+  document.getElementById('leyendaPerfil').innerHTML=
+    `<span class="muted">Perfil x–z a t=${{TMAX}} años · X: 0–${{fmt(DMAX,0)}} m · profundidad: 0–${{fmt(B,1)}} m · α_V=${{fmt(aV,3)}} m</span>`+
     [0,0.25,0.5,0.75,1].map(cc=>{{const k=colormap(cc);return `<span><span class="sw" style="background:rgb(${{k[0]}},${{k[1]}},${{k[2]}})"></span>${{cc}}</span>`;}}).join('');
 }}
 function colormap(t){{

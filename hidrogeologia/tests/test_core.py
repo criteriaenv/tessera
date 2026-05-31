@@ -93,6 +93,36 @@ def test_calcular_completo():
     assert res.transporte["perfiles"] is not None
     # capa de transporte = más transmisiva = Arena (idx 0)
     assert res.transporte["capa"] == "Arena"
+    # penacho en planta y en perfil presentes
+    assert res.transporte["penacho_2d"] is not None
+    assert res.transporte["penacho_perfil"] is not None
+    pp = res.transporte["penacho_perfil"]
+    assert len(pp["capas"]) == 2
+    assert pp["z_m"][-1] == 15.0  # espesor total 10+5
+
+
+def test_alfa_vertical_por_defecto():
+    # α_V por defecto = α_L/100 (Gelhar et al., 1992)
+    c = Capa("t", espesor_m=1.0, K_m_s=1e-4, dispersividad_long_m=5.0)
+    assert _aprox(c.alfa_V(), 0.05)
+    assert _aprox(c.alfa_T(), 0.5)   # α_T por defecto = α_L/10
+    c2 = Capa("t2", espesor_m=1.0, K_m_s=1e-4, dispersividad_long_m=5.0,
+              dispersividad_vert_m=0.2)
+    assert _aprox(c2.alfa_V(), 0.2)  # respeta el valor dado
+
+
+def test_domenico_perfil_limites():
+    import numpy as np
+    # En la profundidad de la fuente y x pequeño, C alto; fuera de la fuente, bajo.
+    v, aL, aV = 1e-6, 5.0, 0.05
+    z = np.array([10.0])     # centro de fuente
+    c_centro = ModeloHidrogeologico.domenico_perfil(
+        np.array([1.0]), z, 1e8, v, aL, aV, alto_fuente=4.0, z_fuente=10.0)
+    c_fuera = ModeloHidrogeologico.domenico_perfil(
+        np.array([1.0]), np.array([100.0]), 1e8, v, aL, aV,
+        alto_fuente=4.0, z_fuente=10.0)
+    assert c_centro[0] > c_fuera[0]
+    assert c_fuera[0] < 0.01
 
 
 def test_calcular_sin_gradiente():
