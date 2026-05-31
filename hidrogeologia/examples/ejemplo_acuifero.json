@@ -1,0 +1,16 @@
+{
+  "nombre": "Emplazamiento industrial — vertido de tricloroetileno (TCE)",
+  "descripcion": "Acuífero detrítico multicapa bajo un antiguo emplazamiento industrial. Se evalúa el tránsito de un disolvente clorado desde una fuente continua hacia un pozo de abastecimiento situado aguas abajo.",
+  "gradiente_hidraulico": 0.004,
+  "concentracion_fuente": 500.0,
+  "tiempo_max_anios": 20.0,
+  "origen": {"x": 441000.0, "y": 4474000.0, "wkid": 25830},
+  "azimut_flujo_grados": 115,
+  "basemap": "imagen",
+  "capas": [
+    {"nombre": "Relleno antrópico", "espesor_m": 3.0, "K_m_s": 5e-5, "porosidad_eficaz": 0.30, "dispersividad_long_m": 2.0, "color": "#8d6e63"},
+    {"nombre": "Arena fina limosa", "espesor_m": 6.0, "K_m_s": 8e-5, "porosidad_eficaz": 0.28, "dispersividad_long_m": 3.0, "color": "#ffb74d"},
+    {"nombre": "Grava arenosa (acuífero)", "espesor_m": 8.0, "K_m_s": 5e-4, "porosidad_eficaz": 0.22, "dispersividad_long_m": 5.0, "densidad_seca_kg_m3": 1700.0, "kd_m3_kg": 0.0008, "color": "#4fc3f7"},
+    {"nombre": "Arcilla limosa (acuitardo)", "espesor_m": 5.0, "K_m_s": 1e-8, "porosidad_eficaz": 0.45, "dispersividad_long_m": 1.0, "color": "#7986cb"}
+  ]
+}

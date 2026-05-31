@@ -54,3 +54,10 @@ tessera_infer/profiler/chat_history.txt
 chat_history.txt
 first_three_band.png
 pca_three_band.png
+
+# --- Módulo de hidrogeología (tránsito de contaminantes) ---
+hidrogeologia/salidas/
+hidrogeologia/**/__pycache__/
+# Conservar los archivos JSON propios del módulo (el patrón global *.json los excluye)
+!hidrogeologia/examples/*.json
+!hidrogeologia/ejemplo_salidas/*.json
