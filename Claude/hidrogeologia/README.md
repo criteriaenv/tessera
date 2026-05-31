@@ -52,10 +52,11 @@ hidrogeológico** que interpreta el modelo.
 
 ## Instalación
 
-Requiere Python 3.9+ y tres dependencias científicas habituales:
+Requiere Python 3.9+ y dependencias científicas habituales (numpy, scipy,
+matplotlib; `pyproj` es opcional, para convertir desde cualquier WKID/EPSG):
 
 ```bash
-pip install -r Claude/hidrogeologia/requirements.txt   # numpy, scipy, matplotlib
+pip install -r Claude/hidrogeologia/requirements.txt   # numpy, scipy, matplotlib, pyproj
 ```
 
 ## Google Colab (interactivo)
