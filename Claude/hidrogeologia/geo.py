@@ -188,13 +188,14 @@ def zoom_para_extension(longitud_m: float) -> int:
     de ``longitud_m`` metros (mosaico de ~3 teselas)."""
     if longitud_m <= 0:
         return 15
-    # Ancho objetivo ≈ 2.2× la longitud; metros por tesela ≈ 156543·cos(lat)/2^z.
+    # Ancho objetivo ≈ 2.5× la longitud; metros por tesela ≈ 156543·cos(lat)/2^z.
     objetivo = max(longitud_m * 2.5, 200.0)
     for z in range(19, 2, -1):
         metros_mosaico = 3 * 156543.03 / (2 ** z)  # aprox. a lat 0; conservador
         if metros_mosaico >= objetivo:
             return z
-    return 12
+    # Penacho enorme: ni el zoom más bajo del bucle lo abarca → vista más amplia.
+    return 3
 
 
 def info_geo(origen: Optional[Dict[str, Any]], azimut_flujo_grados: float,

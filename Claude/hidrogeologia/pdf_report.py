@@ -136,8 +136,7 @@ def _pagina_mapa(pdf, modelo, res):
     penacho. Descarga teselas del mapa base elegido (WKID/selector); si no hay
     red, dibuja una vista esquemática equivalente.
     """
-    from .geo import (stitch_basemap, zoom_para_extension, destino_geodesico,
-                      BASEMAPS)
+    from .geo import stitch_basemap, zoom_para_extension, BASEMAPS
     g = res.geo
     fig = plt.figure(figsize=(8.27, 11.69))
     fig.patch.set_facecolor("white")

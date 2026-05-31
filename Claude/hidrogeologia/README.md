@@ -1,6 +1,6 @@
 # Hidrogeología — Tránsito de contaminantes
 
-[![Abrir en Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/criteriaenv/tessera/blob/claude/hydrogeology-contaminant-analysis-J21BH/hidrogeologia/hidrogeologia_colab.ipynb)
+[![Abrir en Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/criteriaenv/tessera/blob/claude/transito-contaminantes-ER/Claude/hidrogeologia/hidrogeologia_colab.ipynb)
 
 **Análisis y visualización del tránsito de contaminantes en hidrogeología.**
 
@@ -52,10 +52,11 @@ hidrogeológico** que interpreta el modelo.
 
 ## Instalación
 
-Requiere Python 3.9+ y tres dependencias científicas habituales:
+Requiere Python 3.9+ y dependencias científicas habituales (numpy, scipy,
+matplotlib; `pyproj` es opcional, para convertir desde cualquier WKID/EPSG):
 
 ```bash
-pip install -r hidrogeologia/requirements.txt   # numpy, scipy, matplotlib
+pip install -r Claude/hidrogeologia/requirements.txt   # numpy, scipy, matplotlib, pyproj
 ```
 
 ## Google Colab (interactivo)
@@ -67,13 +68,16 @@ interactiva** (con `ipywidgets`) para **añadir/quitar capas** y rellenar todos
 los campos de datos, calcula, muestra las gráficas (incluidos los penachos en
 planta y en perfil) y **descarga** las tres salidas (HTML, PDF, JSON).
 
-> El notebook se regenera con `python hidrogeologia/build_notebook.py`.
+> El notebook se regenera con `python Claude/hidrogeologia/build_notebook.py`.
 
 ## Uso (línea de comandos)
 
-Desde la raíz del repositorio:
+El paquete `hidrogeologia` vive dentro de la carpeta `Claude/`. Ejecuta los
+comandos **desde `Claude/`** (o añade esa carpeta a `PYTHONPATH`):
 
 ```bash
+cd Claude
+
 # Caso de ejemplo incorporado (TCE en acuífero multicapa)
 python -m hidrogeologia
 
@@ -186,7 +190,7 @@ generados a partir de `examples/ejemplo_acuifero.json`:
 ## Estructura del módulo
 
 ```
-hidrogeologia/
+Claude/hidrogeologia/
 ├── core.py           # modelo, capas y ecuaciones de flujo/transporte
 ├── geo.py            # georreferenciación (WKID/EPSG), mapas base, huella penacho
 ├── referencias.py    # bibliografía + capítulo hidrogeológico
@@ -204,5 +208,5 @@ hidrogeologia/
 ## Pruebas
 
 ```bash
-python hidrogeologia/tests/test_core.py     # o:  python -m pytest hidrogeologia -q
+python Claude/hidrogeologia/tests/test_core.py     # o:  cd Claude && python -m pytest hidrogeologia -q
 ```

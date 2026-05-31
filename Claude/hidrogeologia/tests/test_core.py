@@ -162,6 +162,27 @@ def test_geo_huella_y_info():
     assert g2["huella_penacho"] is None
 
 
+def test_zoom_para_extension_monotono():
+    # A mayor longitud de penacho, menor (más amplio) o igual nivel de zoom.
+    from hidrogeologia.geo import zoom_para_extension
+    longitudes = [10, 100, 1000, 5000, 10000, 50000, 100000, 500000]
+    zs = [zoom_para_extension(d) for d in longitudes]
+    assert all(zs[i] >= zs[i + 1] for i in range(len(zs) - 1)), zs
+    assert all(3 <= z <= 19 for z in zs)
+    assert zoom_para_extension(0) == 15      # caso degenerado (sin penacho)
+
+
+def test_wkid_invalido_lanza_valueerror():
+    from hidrogeologia.geo import a_lonlat
+    # 4326 y 3857 se resuelven sin pyproj; un EPSG inexistente debe fallar limpio.
+    assert a_lonlat(-3.7, 40.4, 4326) == (-3.7, 40.4)
+    try:
+        a_lonlat(100.0, 100.0, 99999)
+        assert False, "debería haber lanzado ValueError"
+    except ValueError:
+        pass
+
+
 def test_extension_longitudinal_autofit():
     # La extensión (umbral 1%) debe superar el avance advectivo v·t y ser finita.
     import numpy as np

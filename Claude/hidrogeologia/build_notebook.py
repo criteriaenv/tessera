@@ -5,13 +5,13 @@ el paquete ``hidrogeologia`` clonándolo desde GitHub, y ofrece una interfaz
 interactiva con ipywidgets para cargar los insumos (añadir/quitar capas, más
 campos de datos), calcular y generar las tres salidas (HTML, PDF, JSON).
 
-Ejecutar:  python hidrogeologia/build_notebook.py
+Ejecutar:  python Claude/hidrogeologia/build_notebook.py
 """
 import json
 import os
 
 REPO = "https://github.com/criteriaenv/tessera.git"
-RAMA = "claude/hydrogeology-contaminant-analysis-J21BH"
+RAMA = "claude/transito-contaminantes-ER"
 
 
 def md(texto):
@@ -64,8 +64,8 @@ if not os.path.isdir("tessera"):
 subprocess.run([sys.executable, "-m", "pip", "install", "-q",
                 "numpy", "scipy", "matplotlib", "ipywidgets", "pyproj", "folium"], check=True)
 
-# Hace importable el paquete `hidrogeologia`.
-ruta = os.path.abspath("tessera")
+# Hace importable el paquete `hidrogeologia` (vive en la subcarpeta Claude/).
+ruta = os.path.abspath("tessera/Claude")
 if ruta not in sys.path:
     sys.path.insert(0, ruta)
 

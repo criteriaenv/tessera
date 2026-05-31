@@ -15,7 +15,7 @@ Referencias clave (ver ``referencias.py`` para la lista completa):
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import List, Optional, Dict, Any
 
 import numpy as np
@@ -582,10 +582,11 @@ class ModeloHidrogeologico:
             capas_dict.append(d)
 
         import datetime as _dt
+        from . import __version__ as _ver
         metadatos = {
             "generado": _dt.datetime.now().isoformat(timespec="seconds"),
-            "version": "1.0.0",
-            "modelo": "Acuífero multicapa · ADE (Ogata-Banks) · Domenico 2D",
+            "version": _ver,
+            "modelo": "Acuífero multicapa · ADE (Ogata-Banks) · Domenico (planta y perfil)",
         }
 
         # Bloque de georreferenciación (origen + huella del penacho en planta).

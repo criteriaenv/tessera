@@ -55,9 +55,9 @@ chat_history.txt
 first_three_band.png
 pca_three_band.png
 
-# --- Módulo de hidrogeología (tránsito de contaminantes) ---
-hidrogeologia/salidas/
-hidrogeologia/**/__pycache__/
-# Conservar los archivos JSON propios del módulo (el patrón global *.json los excluye)
-!hidrogeologia/examples/*.json
-!hidrogeologia/ejemplo_salidas/*.json
+# --- Módulo de hidrogeología (tránsito de contaminantes), en Claude/ ---
+Claude/**/salidas/
+Claude/**/__pycache__/
+# Conservar los artefactos JSON propios (el patrón global *.json los excluye)
+!Claude/hidrogeologia/examples/*.json
+!Claude/hidrogeologia/ejemplo_salidas/*.json
